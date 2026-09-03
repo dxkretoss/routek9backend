@@ -11,13 +11,15 @@ export const getPlans = async (req, res, next) => {
 
 export const createCheckoutSession = async (req, res, next) => {
   try {
-    const { planId, userId, email, fullName, returnUrl } = req.body;
+    const { planId, userId, email, fullName, returnUrl, productName, amountInCents } = req.body;
     const result = await createCheckoutSessionService({
       planId,
       userId,
       email,
       fullName,
       returnUrl,
+      productName,
+      amountInCents,
     });
     res.status(200).json(result);
   } catch (err) {

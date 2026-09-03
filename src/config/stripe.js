@@ -2,7 +2,7 @@
 import env from "./env.js";
 
 export const stripe = new Stripe(env.stripeSecretKey, {
-  apiVersion: "2023-10-16",
+  apiVersion: "2024-06-20",
 });
 
 export default stripe;
