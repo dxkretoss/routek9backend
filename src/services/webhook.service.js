@@ -129,21 +129,24 @@ async function handleCheckoutSessionCompleted(session) {
     }
   }
 
-  // 2. Insert verified record into transactions table
+  // 2. Insert or update verified record into transactions table (idempotent)
   try {
-    const { error: txError } = await supabase.from("transactions").insert({
-      id: session.id,
-      user_id: targetUserId,
-      email: customerEmail,
-      description,
-      amount: `$${amountTotal}`,
-      status: "Succeeded",
-      course_id: cleanCourseId,
-      created_at: new Date().toISOString(),
-    });
+    const { error: txError } = await supabase.from("transactions").upsert(
+      {
+        id: session.id,
+        user_id: targetUserId,
+        email: customerEmail,
+        description,
+        amount: `$${amountTotal}`,
+        status: "Succeeded",
+        course_id: cleanCourseId,
+        created_at: new Date().toISOString(),
+      },
+      { onConflict: "id" }
+    );
 
     if (txError) {
-      console.warn("⚠️ Notice inserting into transactions:", txError.message);
+      console.warn("⚠️ Notice upserting into transactions:", txError.message);
     } else {
       console.log("💾 Transaction securely logged in database with status: Succeeded.");
     }
@@ -313,16 +316,19 @@ async function handleInvoicePaymentSucceeded(invoice) {
       if (fallbackProfile) userId = fallbackProfile.id;
     }
 
-    await supabase.from("transactions").insert({
-      id: invoice.id,
-      user_id: userId,
-      email,
-      description: "Route K9 PRO Membership Renewal",
-      amount: `$${amountPaid}`,
-      status: "Succeeded",
-      course_id: "pro-monthly",
-      created_at: new Date().toISOString(),
-    });
+    await supabase.from("transactions").upsert(
+      {
+        id: invoice.id,
+        user_id: userId,
+        email,
+        description: "Route K9 PRO Membership Renewal",
+        amount: `$${amountPaid}`,
+        status: "Succeeded",
+        course_id: "pro-monthly",
+        created_at: new Date().toISOString(),
+      },
+      { onConflict: "id" }
+    );
 
     console.log(`💾 Recurring renewal transaction logged in database: ${invoice.id}`);
   } catch (err) {
@@ -366,16 +372,19 @@ async function handleInvoicePaymentFailed(invoice) {
 
     const amountFailed = (invoice.amount_due ? invoice.amount_due / 100 : 0).toFixed(2);
 
-    await supabase.from("transactions").insert({
-      id: invoice.id,
-      user_id: userId,
-      email,
-      description: `Failed Route K9 PRO Subscription Payment${failureSuffix}`,
-      amount: `$${amountFailed}`,
-      status: "Failed",
-      course_id: "pro-monthly",
-      created_at: new Date().toISOString(),
-    });
+    await supabase.from("transactions").upsert(
+      {
+        id: invoice.id,
+        user_id: userId,
+        email,
+        description: `Failed Route K9 PRO Subscription Payment${failureSuffix}`,
+        amount: `$${amountFailed}`,
+        status: "Failed",
+        course_id: "pro-monthly",
+        created_at: new Date().toISOString(),
+      },
+      { onConflict: "id" }
+    );
   } catch (err) {
     console.warn("Notice logging failed payment:", err);
   }
@@ -413,16 +422,19 @@ async function handlePaymentIntentFailed(paymentIntent) {
       if (profile) userId = profile.id;
     }
 
-    await supabase.from("transactions").insert({
-      id: paymentIntent.id,
-      user_id: userId,
-      email,
-      description: `Failed Payment: ${productName} (${failureReason})`,
-      amount: `$${amount}`,
-      status: "Failed",
-      course_id: courseId,
-      created_at: new Date().toISOString(),
-    });
+    await supabase.from("transactions").upsert(
+      {
+        id: paymentIntent.id,
+        user_id: userId,
+        email,
+        description: `Failed Payment: ${productName} (${failureReason})`,
+        amount: `$${amount}`,
+        status: "Failed",
+        course_id: courseId,
+        created_at: new Date().toISOString(),
+      },
+      { onConflict: "id" }
+    );
     console.log("💾 Failed one-time payment intent recorded in transactions table.");
   } catch (err) {
     console.warn("Notice logging failed payment intent:", err);
