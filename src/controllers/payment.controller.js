@@ -1,4 +1,4 @@
-﻿import { createCheckoutSessionService, getProPlanPrices } from "../services/payment.service.js";
+import { createCheckoutSessionService, getProPlanPrices, verifySessionStatusService } from "../services/payment.service.js";
 
 export const getPlans = async (req, res, next) => {
   try {
@@ -11,9 +11,10 @@ export const getPlans = async (req, res, next) => {
 
 export const createCheckoutSession = async (req, res, next) => {
   try {
-    const { planId, userId, email, fullName, returnUrl, productName, amountInCents } = req.body;
+    const { planId, courseId, userId, email, fullName, returnUrl, productName, amountInCents } = req.body;
     const result = await createCheckoutSessionService({
       planId,
+      courseId,
       userId,
       email,
       fullName,
@@ -26,3 +27,17 @@ export const createCheckoutSession = async (req, res, next) => {
     next(err);
   }
 };
+
+export const verifySessionStatus = async (req, res, next) => {
+  try {
+    const sessionId = req.query.sessionId || req.query.session_id || req.params.sessionId;
+    if (!sessionId) {
+      return res.status(400).json({ success: false, message: "Missing sessionId parameter." });
+    }
+    const result = await verifySessionStatusService(sessionId);
+    res.status(200).json(result);
+  } catch (err) {
+    next(err);
+  }
+};
+

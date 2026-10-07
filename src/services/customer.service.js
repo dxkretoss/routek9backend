@@ -1,5 +1,5 @@
-﻿import stripe from "../config/stripe.js";
-import env from "../config/env.js";
+import stripe from "../config/stripe.js";
+import { supabase } from "../config/supabase.js";
 
 /**
  * Checks Supabase profiles table for existing stripe_customer_id.
@@ -10,25 +10,22 @@ export async function getOrCreateStripeCustomer({ userId, email, fullName, role 
   const cleanEmail = email.trim().toLowerCase();
 
   // 1. Check in Supabase DB if customer ID already exists
-  if (userId && env.supabaseUrl && env.supabaseAnonKey) {
+  if (userId) {
     try {
-      const res = await fetch(`${env.supabaseUrl}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=id,stripe_customer_id`, {
-        headers: {
-          apikey: env.supabaseAnonKey,
-          Authorization: `Bearer ${env.supabaseAnonKey}`,
-        },
-      });
-      if (res.ok) {
-        const rows = await res.json();
-        if (rows?.[0]?.stripe_customer_id) {
-          try {
-            const existingStripeCust = await stripe.customers.retrieve(rows[0].stripe_customer_id);
-            if (existingStripeCust && !existingStripeCust.deleted) {
-              return existingStripeCust.id;
-            }
-          } catch (e) {
-            console.warn("Notice: Stored stripe customer ID not found in current Stripe mode, searching or creating.");
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("id, stripe_customer_id")
+        .eq("id", userId)
+        .maybeSingle();
+
+      if (!error && data?.stripe_customer_id) {
+        try {
+          const existingStripeCust = await stripe.customers.retrieve(data.stripe_customer_id);
+          if (existingStripeCust && !existingStripeCust.deleted) {
+            return existingStripeCust.id;
           }
+        } catch (e) {
+          console.warn("Notice: Stored stripe customer ID not found in current Stripe mode, searching or creating.");
         }
       }
     } catch (err) {
@@ -63,18 +60,16 @@ export async function getOrCreateStripeCustomer({ userId, email, fullName, role 
 }
 
 async function saveCustomerIdToSupabase(userId, customerId) {
-  if (!userId || !customerId || !env.supabaseUrl || !env.supabaseAnonKey) return;
+  if (!userId || !customerId) return;
   try {
-    await fetch(`${env.supabaseUrl}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
-      method: "PATCH",
-      headers: {
-        apikey: env.supabaseAnonKey,
-        Authorization: `Bearer ${env.supabaseAnonKey}`,
-        "Content-Type": "application/json",
-        Prefer: "return=minimal",
-      },
-      body: JSON.stringify({ stripe_customer_id: customerId }),
-    });
+    const { error } = await supabase
+      .from("profiles")
+      .update({ stripe_customer_id: customerId })
+      .eq("id", userId);
+
+    if (error) {
+      console.warn("Notice saving customer ID to Supabase:", error.message);
+    }
   } catch (err) {
     console.warn("Notice saving customer ID to Supabase:", err);
   }
