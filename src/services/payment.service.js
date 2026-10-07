@@ -1,4 +1,4 @@
-﻿import stripe from "../config/stripe.js";
+import stripe from "../config/stripe.js";
 import env from "../config/env.js";
 import { getOrCreateStripeCustomer } from "./customer.service.js";
 
@@ -27,7 +27,16 @@ export async function getProPlanPrices() {
 /**
  * Creates a secure embedded Stripe checkout session using verified backend price IDs
  */
-export async function createCheckoutSessionService({ planId, userId, email, fullName, returnUrl, productName, amountInCents }) {
+export async function createCheckoutSessionService({
+  planId,
+  courseId,
+  userId,
+  email,
+  fullName,
+  returnUrl,
+  productName,
+  amountInCents,
+}) {
   if (!returnUrl) throw new Error("returnUrl is required");
 
   // 1. Get or create single permanent Stripe Customer ID
@@ -37,9 +46,33 @@ export async function createCheckoutSessionService({ planId, userId, email, full
     fullName,
   });
 
-  const cleanPlanId = String(planId || "").toLowerCase();
-  const isYearly = cleanPlanId.includes("yearly") || cleanPlanId.includes("year") || cleanPlanId === env.stripePriceYearly.toLowerCase();
-  const isSubscription = cleanPlanId.includes("pro") || isYearly || cleanPlanId.includes("monthly") || cleanPlanId === env.stripePriceMonthly.toLowerCase();
+  const cleanPlanId = String(planId || "").trim().toLowerCase();
+  const isYearly =
+    cleanPlanId.includes("yearly") ||
+    cleanPlanId.includes("year") ||
+    cleanPlanId === env.stripePriceYearly.toLowerCase() ||
+    cleanPlanId === "price_1ubvxccjtunwpqvuoqc7wh4" ||
+    cleanPlanId === "price_1ubcfxcjtunwpqvagjkm7a5";
+
+  const isMonthly =
+    cleanPlanId.includes("monthly") ||
+    cleanPlanId.includes("month") ||
+    cleanPlanId === env.stripePriceMonthly.toLowerCase() ||
+    cleanPlanId === "price_1ubvwucjtunwpqvuoqcqdarm" ||
+    cleanPlanId === "price_1ubcfecjtunwpqvqmm7hqcl";
+
+  const isCourseOrCert = Boolean(
+    courseId ||
+    cleanPlanId.includes("hipaa") ||
+    cleanPlanId.includes("cert") ||
+    cleanPlanId.includes("course") ||
+    (productName && !cleanPlanId.includes("pro") && !isYearly && !isMonthly)
+  );
+
+  const isSubscription = !isCourseOrCert && (cleanPlanId.includes("pro") || isYearly || isMonthly || (!productName && !amountInCents));
+
+  const resolvedCourseId = courseId || (!isSubscription ? cleanPlanId : null);
+  const resolvedProductName = productName || (isSubscription ? "Route K9 PRO Membership" : "Route K9 Certification Course");
 
   const sessionParams = {
     ui_mode: "embedded",
@@ -48,7 +81,9 @@ export async function createCheckoutSessionService({ planId, userId, email, full
     customer_email: customerId ? undefined : (email || undefined),
     metadata: {
       userId: userId || "",
-      planId: cleanPlanId,
+      planId: isSubscription ? (isYearly ? "yearly" : "monthly") : (cleanPlanId || "certification"),
+      courseId: resolvedCourseId || "",
+      productName: resolvedProductName,
     },
   };
 
@@ -79,7 +114,7 @@ export async function createCheckoutSessionService({ planId, userId, email, full
         price_data: {
           currency: "usd",
           product_data: {
-            name: productName || "Route K9 Training Course",
+            name: resolvedProductName,
           },
           unit_amount: unitAmount,
         },
@@ -94,3 +129,44 @@ export async function createCheckoutSessionService({ planId, userId, email, full
     sessionId: session.id,
   };
 }
+
+/**
+ * Verifies the actual Stripe payment status of a checkout session
+ */
+export async function verifySessionStatusService(sessionId) {
+  if (!sessionId || typeof sessionId !== "string") {
+    return {
+      success: false,
+      paid: false,
+      message: "A valid sessionId is required.",
+    };
+  }
+
+  try {
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+    const isPaid = session.payment_status === "paid";
+    const isComplete = session.status === "complete";
+    const isSuccessful = isPaid || isComplete;
+
+    return {
+      success: isSuccessful,
+      paid: isPaid,
+      status: session.status,
+      paymentStatus: session.payment_status,
+      customerEmail: session.customer_details?.email || session.customer_email || "",
+      amountTotal: session.amount_total ? (session.amount_total / 100).toFixed(2) : "0.00",
+      planId: session.metadata?.planId || "monthly",
+      userId: session.metadata?.userId || null,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      paid: false,
+      status: "error",
+      message: err.message || "Failed to retrieve Stripe session",
+    };
+  }
+}
+
+

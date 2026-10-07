@@ -27,10 +27,25 @@ app.use(
 );
 
 /**
- * Body parser
+ * Raw body parser strictly for Stripe Webhooks (Required for cryptographic signature verification)
  */
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true }));
+app.use(
+    `${env.apiPrefix}/payments/webhook`,
+    express.raw({ type: "*/*" })
+);
+
+/**
+ * Body parser for standard API routes (excludes webhook route)
+ */
+app.use((req, res, next) => {
+    if (req.originalUrl.includes("/payments/webhook") || req.path.includes("/payments/webhook")) {
+        return next();
+    }
+    express.json({ limit: "10mb" })(req, res, (err) => {
+        if (err) return next(err);
+        express.urlencoded({ extended: true })(req, res, next);
+    });
+});
 
 /**
  * Logging

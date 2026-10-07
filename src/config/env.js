@@ -8,6 +8,7 @@ const env = {
   apiPrefix: process.env.API_PREFIX || "/api/v1",
   corsOrigin: process.env.CORS_ORIGIN || "*",
   stripeSecretKey: process.env.STRIPE_SECRET_KEY || "",
+  stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET || "whsec_dXAt1AUcqln7CPrFJyxvDBbthTgvBKvr",
   stripePriceMonthly: process.env.STRIPE_PRICE_MONTHLY || "price_1UBVwuCjtUNWPqGvUoCqDarm",
   stripePriceYearly: process.env.STRIPE_PRICE_YEARLY || "price_1UBVxCCjtUNWPqGvUoCQ7wh4",
   supabaseUrl: process.env.SUPABASE_URL || "",
