@@ -336,7 +336,13 @@ async function handleInvoicePaymentSucceeded(invoice) {
 async function handleInvoicePaymentFailed(invoice) {
   const customerId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id;
   const email = invoice.customer_email || "";
-  console.warn(`🚨 [Invoice Payment Failed] Customer: ${customerId}, Email: ${email}`);
+  const failureReason =
+    invoice.last_finalization_error?.message ||
+    invoice.payment_intent?.last_payment_error?.message ||
+    null;
+
+  const failureSuffix = failureReason ? ` (${failureReason})` : "";
+  console.warn(`🚨 [Invoice Payment Failed] Customer: ${customerId}, Email: ${email}, Reason: ${failureReason || "N/A"}`);
 
   try {
     let userId = null;
@@ -364,7 +370,7 @@ async function handleInvoicePaymentFailed(invoice) {
       id: invoice.id,
       user_id: userId,
       email,
-      description: "Failed Route K9 PRO Subscription Payment",
+      description: `Failed Route K9 PRO Subscription Payment${failureSuffix}`,
       amount: `$${amountFailed}`,
       status: "Failed",
       course_id: "pro-monthly",
@@ -380,12 +386,19 @@ async function handleInvoicePaymentFailed(invoice) {
  * Triggered when a one-time payment (Course / Certification) fails or is declined.
  */
 async function handlePaymentIntentFailed(paymentIntent) {
+  // If this PaymentIntent is attached to an Invoice (Subscription billing),
+  // it is already recorded by the invoice.payment_failed event. Skip to avoid duplicates.
+  if (paymentIntent.invoice) {
+    console.log(`ℹ️ [Payment Intent Failed] Belongs to subscription invoice (${paymentIntent.invoice}). Skipping duplicate transaction log.`);
+    return;
+  }
+
   const customerId = typeof paymentIntent.customer === "string" ? paymentIntent.customer : paymentIntent.customer?.id;
   const email = paymentIntent.receipt_email || paymentIntent.charges?.data?.[0]?.billing_details?.email || "";
   const amount = (paymentIntent.amount ? paymentIntent.amount / 100 : 0).toFixed(2);
   const failureReason = paymentIntent.last_payment_error?.message || "Payment declined";
-  const productName = paymentIntent.metadata?.productName || "Course / Certification Purchase";
-  const courseId = paymentIntent.metadata?.courseId || "certification";
+  const productName = paymentIntent.metadata?.productName || "Payment";
+  const courseId = paymentIntent.metadata?.courseId || null;
 
   console.warn(`🚨 [Payment Intent Failed] Customer: ${customerId}, Amount: $${amount}, Reason: ${failureReason}`);
 
@@ -410,7 +423,7 @@ async function handlePaymentIntentFailed(paymentIntent) {
       course_id: courseId,
       created_at: new Date().toISOString(),
     });
-    console.log("💾 Failed payment intent recorded in transactions table.");
+    console.log("💾 Failed one-time payment intent recorded in transactions table.");
   } catch (err) {
     console.warn("Notice logging failed payment intent:", err);
   }
