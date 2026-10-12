@@ -234,6 +234,24 @@ async function handleSubscriptionUpdated(subscription) {
       .maybeSingle();
 
     if (profile) {
+      if (status === "canceled" || status === "unpaid" || status === "past_due") {
+        await supabase.from("profiles").update({
+          is_pro: false,
+          membership: "Free",
+          subscription_plan: "free",
+          updated_at: new Date().toISOString(),
+        }).eq("id", profile.id);
+        console.log(`[Subscription Sync] Converted user ${profile.id} to Free plan (status: ${status}).`);
+      } else if (status === "active" || status === "trialing") {
+        await supabase.from("profiles").update({
+          is_pro: true,
+          membership: "Pro",
+          subscription_plan: "pro",
+          updated_at: new Date().toISOString(),
+        }).eq("id", profile.id);
+        console.log(`[Subscription Sync] Restored user ${profile.id} to Pro plan (status: ${status}).`);
+      }
+
       console.log(`ℹ️ [Subscription Sync] User ${profile.id} (${profile.email}) subscription status is "${status}". Account remains preserved.`);
     } else {
       console.log(`ℹ️ No existing profile found with stripe_customer_id: ${customerId}`);
@@ -262,6 +280,14 @@ async function handleSubscriptionDeleted(subscription) {
       .maybeSingle();
 
     if (profile) {
+      // Downgrade profile to Free plan in Supabase
+      await supabase.from("profiles").update({
+        is_pro: false,
+        membership: "Free",
+        subscription_plan: "free",
+        updated_at: new Date().toISOString(),
+      }).eq("id", profile.id);
+
       // Deliver courteous inbox notification informing user their PRO period ended
       await supabase.from("notifications").insert({
         user_id: profile.id,
@@ -385,6 +411,27 @@ async function handleInvoicePaymentFailed(invoice) {
       },
       { onConflict: "id" }
     );
+
+    // Automatically downgrade user profile in Supabase to Free plan upon invoice failure
+    if (userId || email) {
+      let profileQuery = supabase.from("profiles").update({
+        is_pro: false,
+        membership: "Free",
+        subscription_plan: "free",
+        updated_at: new Date().toISOString(),
+      });
+      if (userId) {
+        profileQuery = profileQuery.eq("id", userId);
+      } else {
+        profileQuery = profileQuery.eq("email", email);
+      }
+      const { error: downgradeError } = await profileQuery;
+      if (downgradeError) {
+        console.warn("Notice downgrading profile on failed invoice:", downgradeError.message);
+      } else {
+        console.log(`[Downgraded to Free] Successfully converted user ${userId || email} to Free plan due to payment failure.`);
+      }
+    }
   } catch (err) {
     console.warn("Notice logging failed payment:", err);
   }
